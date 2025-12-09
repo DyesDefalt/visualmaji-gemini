@@ -5,11 +5,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Upload, Image as ImageIcon, Zap, History, Settings, LogOut, 
   Crown, ChevronDown, Copy, Check, Sparkles, BarChart3, 
-  Clock, FileJson, Loader2
+  Clock, FileJson, Loader2, AlertCircle, Palette
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '../../components/context/AuthContext';
+import VisionModelSelector, { useVisionModelSelection } from '../../components/VisionModelSelector';
+import BrandSettings from '../../components/BrandSettings';
+import BrandPreview from '../../components/BrandPreview';
+import { getVisionUsageStats } from '../../lib/ai/usage';
 
 // Plan badges
 const PLAN_BADGES = {
@@ -20,16 +24,7 @@ const PLAN_BADGES = {
   business: { label: 'Business', color: 'dark', icon: Crown },
 };
 
-// Mock analysis result
-const MOCK_RESULT = {
-  subject: "Premium wireless headphones",
-  medium: "Product photography, 3D render hybrid",
-  lighting: "Soft studio lighting with dramatic rim light",
-  composition: "Center-focused hero shot with floating elements",
-  style: "Minimalist luxury, Apple-inspired aesthetics",
-  colorPalette: ["#1a1a2e", "#4a4a68", "#d4af37", "#ffffff"],
-  prompt: "Ultra-realistic product photography of premium wireless headphones, floating in a minimalist void, soft studio lighting with dramatic golden rim light, center composition, Apple-inspired luxury aesthetics, 8K resolution, octane render --ar 16:9 --v 6"
-};
+
 
 const Dashboard = () => {
   const { user, logout, loading } = useAuth();
@@ -42,7 +37,18 @@ const Dashboard = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [copiedBrand, setCopiedBrand] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [analysisError, setAnalysisError] = useState(null);
+  const [fallbackNotification, setFallbackNotification] = useState(null);
+  const [brandProfile, setBrandProfile] = useState(null);
+  const [visionUsageStats, setVisionUsageStats] = useState(null);
+  
+  // Vision model selection hook - Requirements 1.1, 1.2
+  const { selectedModel, onModelChange, isLoaded: modelSelectionLoaded } = useVisionModelSelection();
+  
+  // Check if user is paid (basic, pro, creator, business) - Requirement 1.3
+  const isPaidUser = user?.plan && ['basic', 'pro', 'creator', 'business'].includes(user.plan);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -50,6 +56,30 @@ const Dashboard = () => {
       router.replace('/login');
     }
   }, [user, loading, router]);
+
+  // Load brand profile on mount - Requirement 3.1
+  useEffect(() => {
+    if (user?.id && isPaidUser) {
+      fetch('/api/brand')
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.profile) {
+            setBrandProfile(data.profile);
+          }
+        })
+        .catch(() => {
+          // Silently fail - brand profile is optional
+        });
+    }
+  }, [user?.id, isPaidUser]);
+
+  // Load vision usage stats - Requirement 5.4
+  useEffect(() => {
+    if (user?.id) {
+      const stats = getVisionUsageStats(user.id, user.plan || 'free');
+      setVisionUsageStats(stats);
+    }
+  }, [user?.id, user?.plan, analysisResult]);
 
 
   const planBadge = PLAN_BADGES[user?.plan || 'free'];
@@ -97,15 +127,59 @@ const Dashboard = () => {
     }
   };
 
-  const handleAnalyze = () => {
+  // Requirement 1.2, 1.5, 3.1: Analyze image using vision API
+  const handleAnalyze = async () => {
     if (!uploadedImage) return;
     
     setIsAnalyzing(true);
-    // Simulate analysis
-    setTimeout(() => {
-      setAnalysisResult(MOCK_RESULT);
+    setAnalysisError(null);
+    setFallbackNotification(null);
+    
+    try {
+      const response = await fetch('/api/ai/vision', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageData: uploadedImage,
+          modelId: selectedModel,
+          userId: user?.id || 'anonymous',
+          userTier: user?.plan || 'free',
+          brandProfile: brandProfile,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        // Handle usage limit errors - Requirement 1.5
+        if (data.alternatives && data.alternatives.length > 0) {
+          setAnalysisError(`${data.error}. Try: ${data.alternatives.slice(0, 3).join(', ')}`);
+        } else {
+          setAnalysisError(data.error || 'Analysis failed');
+        }
+        setIsAnalyzing(false);
+        return;
+      }
+      
+      // Check for fallback notification - Requirement 1.5
+      if (data.fallbackUsed) {
+        setFallbackNotification(`Model unavailable. Used ${data.modelUsed || 'default model'} instead.`);
+      }
+      
+      setAnalysisResult(data.result);
+      
+      // Refresh usage stats after analysis
+      if (user?.id) {
+        const stats = getVisionUsageStats(user.id, user.plan || 'free');
+        setVisionUsageStats(stats);
+      }
+    } catch (error) {
+      setAnalysisError('Failed to analyze image. Please try again.');
+    } finally {
       setIsAnalyzing(false);
-    }, 2500);
+    }
   };
 
   const copyPrompt = () => {
@@ -116,9 +190,20 @@ const Dashboard = () => {
     }
   };
 
+  // Copy brand-adjusted prompt - Requirement 3.4
+  const copyBrandPrompt = () => {
+    if (analysisResult?.brandAdjustedPrompt) {
+      navigator.clipboard.writeText(analysisResult.brandAdjustedPrompt);
+      setCopiedBrand(true);
+      setTimeout(() => setCopiedBrand(false), 2000);
+    }
+  };
+
   const resetAnalysis = () => {
     setUploadedImage(null);
     setAnalysisResult(null);
+    setAnalysisError(null);
+    setFallbackNotification(null);
   };
 
   // Usage stats (mock data)
@@ -315,6 +400,46 @@ const Dashboard = () => {
                 ))}
               </div>
 
+              {/* Vision Model Selector - Requirements 1.1, 1.3 */}
+              {isPaidUser && modelSelectionLoaded && (
+                <div className="mb-6 bg-stone-900/50 rounded-2xl p-4 border border-stone-800">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-stone-400 mb-2">
+                      <Zap size={16} />
+                      <span className="text-sm font-medium">Vision Model</span>
+                    </div>
+                  </div>
+                  <VisionModelSelector
+                    selectedModel={selectedModel}
+                    onModelChange={onModelChange}
+                    userTier={user?.plan || 'free'}
+                    disabled={isAnalyzing}
+                  />
+                </div>
+              )}
+
+              {/* Error Message Display */}
+              {analysisError && (
+                <div className="mb-6 bg-red-900/30 border border-red-700 rounded-2xl p-4 flex items-start gap-3">
+                  <AlertCircle className="text-red-400 flex-shrink-0 mt-0.5" size={20} />
+                  <div>
+                    <p className="text-red-300 font-medium">Analysis Error</p>
+                    <p className="text-red-400 text-sm mt-1">{analysisError}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Fallback Notification - Requirement 1.5 */}
+              {fallbackNotification && (
+                <div className="mb-6 bg-amber-900/30 border border-amber-700 rounded-2xl p-4 flex items-start gap-3">
+                  <AlertCircle className="text-amber-400 flex-shrink-0 mt-0.5" size={20} />
+                  <div>
+                    <p className="text-amber-300 font-medium">Model Fallback</p>
+                    <p className="text-amber-400 text-sm mt-1">{fallbackNotification}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Upload Area */}
               {!uploadedImage ? (
                 <motion.div
@@ -417,7 +542,9 @@ const Dashboard = () => {
                         </div>
 
                         <div className="space-y-4 mb-6">
-                          {Object.entries(analysisResult).filter(([key]) => key !== 'prompt' && key !== 'colorPalette').map(([key, value]) => (
+                          {Object.entries(analysisResult).filter(([key]) => 
+                            key !== 'prompt' && key !== 'colorPalette' && key !== 'brandAdjustedPrompt'
+                          ).map(([key, value]) => (
                             <div key={key}>
                               <label className="text-xs text-stone-400 uppercase tracking-wider">{key}</label>
                               <p className="text-white mt-1">{value}</p>
@@ -428,7 +555,7 @@ const Dashboard = () => {
                           <div>
                             <label className="text-xs text-stone-400 uppercase tracking-wider">Color Palette</label>
                             <div className="flex gap-2 mt-2">
-                              {analysisResult.colorPalette.map((color, i) => (
+                              {analysisResult.colorPalette?.map((color, i) => (
                                 <div
                                   key={i}
                                   className="w-10 h-10 rounded-lg"
@@ -438,12 +565,34 @@ const Dashboard = () => {
                               ))}
                             </div>
                           </div>
+
+                          {/* Brand Color Palette - Requirement 3.4 */}
+                          {brandProfile && brandProfile.colorPalette && (
+                            <div>
+                              <label className="text-xs text-stone-400 uppercase tracking-wider flex items-center gap-2">
+                                <Palette size={12} />
+                                Your Brand Colors
+                              </label>
+                              <div className="flex gap-2 mt-2">
+                                {brandProfile.colorPalette.map((color, i) => (
+                                  <div
+                                    key={i}
+                                    className="w-10 h-10 rounded-lg border-2 border-amber-500/50"
+                                    style={{ backgroundColor: color }}
+                                    title={color}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
 
-                        {/* Prompt */}
-                        <div className="bg-stone-950 rounded-xl p-4 border border-stone-800">
+                        {/* Original Prompt - Requirement 3.4 */}
+                        <div className="bg-stone-950 rounded-xl p-4 border border-stone-800 mb-4">
                           <div className="flex items-center justify-between mb-2">
-                            <label className="text-xs text-stone-400 uppercase tracking-wider">Generated Prompt</label>
+                            <label className="text-xs text-stone-400 uppercase tracking-wider">
+                              {analysisResult.brandAdjustedPrompt ? 'Original Prompt' : 'Generated Prompt'}
+                            </label>
                             <button
                               onClick={copyPrompt}
                               className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm"
@@ -456,6 +605,28 @@ const Dashboard = () => {
                             {analysisResult.prompt}
                           </p>
                         </div>
+
+                        {/* Brand-Adjusted Prompt - Requirement 3.4 */}
+                        {analysisResult.brandAdjustedPrompt && (
+                          <div className="bg-gradient-to-br from-amber-950/50 to-stone-950 rounded-xl p-4 border border-amber-700/50">
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-xs text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                                <Sparkles size={12} />
+                                Brand-Adjusted Prompt
+                              </label>
+                              <button
+                                onClick={copyBrandPrompt}
+                                className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm"
+                              >
+                                {copiedBrand ? <Check size={16} /> : <Copy size={16} />}
+                                {copiedBrand ? 'Copied!' : 'Copy'}
+                              </button>
+                            </div>
+                            <p className="text-amber-300 font-mono text-sm leading-relaxed">
+                              {analysisResult.brandAdjustedPrompt}
+                            </p>
+                          </div>
+                        )}
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -481,7 +652,8 @@ const Dashboard = () => {
           )}
 
           {activeTab === 'settings' && (
-            <div className="max-w-2xl mx-auto">
+            <div className="max-w-4xl mx-auto space-y-8">
+              {/* Account Settings */}
               <div className="bg-stone-900/50 rounded-3xl p-6 border border-stone-800 space-y-6">
                 <div>
                   <h3 className="font-bold mb-4">Account Settings</h3>
@@ -531,6 +703,108 @@ const Dashboard = () => {
                     Delete Account
                   </button>
                 </div>
+              </div>
+
+              {/* Vision Usage Stats - Requirement 5.4 */}
+              {visionUsageStats && (
+                <div className="bg-stone-900/50 rounded-3xl p-6 border border-stone-800">
+                  <div className="flex items-center gap-2 mb-6">
+                    <BarChart3 size={20} className="text-amber-400" />
+                    <h3 className="font-bold">Vision Model Usage</h3>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {Object.entries(visionUsageStats).map(([providerKey, stats]) => {
+                      const dailyPercent = stats.limits.daily === Infinity 
+                        ? 0 
+                        : (stats.usage.daily / stats.limits.daily) * 100;
+                      const monthlyPercent = stats.limits.monthly === Infinity 
+                        ? 0 
+                        : (stats.usage.monthly / stats.limits.monthly) * 100;
+                      const isApproachingLimit = dailyPercent >= 80 || monthlyPercent >= 80;
+                      const isAtLimit = dailyPercent >= 100 || monthlyPercent >= 100;
+                      
+                      return (
+                        <div 
+                          key={providerKey} 
+                          className={`p-4 rounded-xl border ${
+                            isAtLimit 
+                              ? 'bg-red-900/20 border-red-700' 
+                              : isApproachingLimit 
+                                ? 'bg-amber-900/20 border-amber-700' 
+                                : 'bg-stone-800/50 border-stone-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium text-sm">{stats.name}</span>
+                            {isAtLimit && <AlertCircle size={16} className="text-red-400" />}
+                            {isApproachingLimit && !isAtLimit && <AlertCircle size={16} className="text-amber-400" />}
+                          </div>
+                          <div className="space-y-2 text-xs">
+                            <div>
+                              <div className="flex justify-between text-stone-400 mb-1">
+                                <span>Daily</span>
+                                <span>
+                                  {stats.usage.daily}/{stats.limits.daily === Infinity ? '∞' : stats.limits.daily}
+                                </span>
+                              </div>
+                              {stats.limits.daily !== Infinity && (
+                                <div className="h-1.5 bg-stone-700 rounded-full overflow-hidden">
+                                  <div 
+                                    className={`h-full rounded-full transition-all ${
+                                      dailyPercent >= 100 ? 'bg-red-500' : dailyPercent >= 80 ? 'bg-amber-500' : 'bg-amber-400'
+                                    }`}
+                                    style={{ width: `${Math.min(dailyPercent, 100)}%` }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-stone-400 mb-1">
+                                <span>Monthly</span>
+                                <span>
+                                  {stats.usage.monthly}/{stats.limits.monthly === Infinity ? '∞' : stats.limits.monthly}
+                                </span>
+                              </div>
+                              {stats.limits.monthly !== Infinity && (
+                                <div className="h-1.5 bg-stone-700 rounded-full overflow-hidden">
+                                  <div 
+                                    className={`h-full rounded-full transition-all ${
+                                      monthlyPercent >= 100 ? 'bg-red-500' : monthlyPercent >= 80 ? 'bg-amber-500' : 'bg-amber-400'
+                                    }`}
+                                    style={{ width: `${Math.min(monthlyPercent, 100)}%` }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Brand Profile Settings - Requirements 2.1, 2.5 */}
+              <div className="bg-stone-900/50 rounded-3xl p-6 border border-stone-800">
+                <div className="flex items-center gap-2 mb-6">
+                  <Palette size={20} className="text-amber-400" />
+                  <h3 className="font-bold">Brand Profile</h3>
+                </div>
+                <BrandSettings 
+                  userId={user?.id} 
+                  userTier={user?.plan || 'free'}
+                />
+                {/* Brand Preview - shown alongside settings for paid users */}
+                {isPaidUser && brandProfile && (
+                  <div className="mt-6 pt-6 border-t border-stone-700">
+                    <BrandPreview
+                      colorPalette={brandProfile.colorPalette}
+                      primaryFont={brandProfile.fonts?.primary}
+                      secondaryFont={brandProfile.fonts?.secondary}
+                      brandName={brandProfile.name}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}

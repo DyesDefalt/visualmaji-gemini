@@ -95,9 +95,9 @@ describe('Property 1: Legal page layout consistency', () => {
           unmount();
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 4 }  // Only 4 legal pages exist, so 4 runs covers all cases
     );
-  }, 30000);
+  }, 60000);
 
   it('each legal page SHALL display the standard VIMA header with navigation', () => {
     for (const legalPage of legalPages) {

@@ -131,134 +131,119 @@
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 8. Create Vision Model Selector component
-
-
-
-
-
   - [x] 8.1 Implement VisionModelSelector component
-
-
     - Create `components/VisionModelSelector.jsx`
     - Render grouped dropdown with provider sections
     - Show free/paid badges per model
     - Return null for free users
     - _Requirements: 1.1, 1.3, 1.4, 1.6_
 
-
   - [x] 8.2 Implement model selection persistence
-
     - Save selected model to localStorage
     - Load saved selection on mount
     - _Requirements: 1.2_
 
   - [x] 8.3 Write property test for model selector display
-
-
-
-
-
-
     - **Property 1: Model Selector Display for Paid Users**
     - Test renders for paid users with all models
     - **Validates: Requirements 1.1, 1.4, 1.6**
 
-
   - [x] 8.4 Write property test for free user restriction
-
-
-
-
-
     - **Property 3: Free User Model Restriction**
     - Test selector hidden for free users
     - **Validates: Requirements 1.3**
 
-
-
-
   - [x] 8.5 Write property test for model selection persistence
-
-
-
-
-
-
-
-
-
     - **Property 2: Model Selection Persistence**
     - Test selected model used in analysis
     - **Validates: Requirements 1.2**
 
-- [ ] 9. Create Brand Settings component
-  - [ ] 9.1 Implement BrandSettings component
+- [x] 9. Create Brand Settings component
+  - [x] 9.1 Implement BrandSettings component
     - Create `components/BrandSettings.jsx`
     - Add logo upload with color extraction
     - Add color palette picker (2-6 colors)
     - Add font selector (primary/secondary)
     - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-  - [ ] 9.2 Implement upgrade prompt for free users
+  - [x] 9.2 Implement upgrade prompt for free users
     - Show upgrade prompt instead of settings for free users
     - Link to pricing page
     - _Requirements: 2.5_
 
-  - [ ] 9.3 Implement export/import functionality
+  - [x] 9.3 Implement export/import functionality
     - Add export button that downloads JSON
     - Add import button that accepts JSON file
     - Validate imported profile before applying
     - _Requirements: 6.1, 6.2_
 
-- [ ] 10. Create Brand Preview component
-  - [ ] 10.1 Implement BrandPreview component
+- [x] 10. Create Brand Preview component
+  - [x] 10.1 Implement BrandPreview component
     - Create `components/BrandPreview.jsx`
     - Display color swatches from palette
     - Display sample text in selected fonts
     - Update live as settings change
     - _Requirements: 4.1, 4.2, 4.3_
 
-  - [ ]* 10.2 Write property test for preview color swatches
+  - [x] 10.2 Write property test for preview color swatches
     - **Property 9: Preview Color Swatches Match Palette**
-    - Test swatches match configured palette
     - **Validates: Requirements 4.2**
 
-- [ ] 11. Create API routes
-  - [ ] 11.1 Create vision analysis API route
+- [x] 11. Create API routes
+  - [x] 11.1 Create vision analysis API route
     - Create `app/api/ai/vision/route.js`
     - Handle POST requests with image and model selection
-    - Validate user tier and usage limits
-    - Apply brand adjustments if profile exists
+    - Validate user tier and usage limits using checkVisionUsageLimit
+    - Call analyzeImage from vision service with brand profile
+    - Track usage with incrementVisionUsage
+    - Return analysis result with brand adjustments if applicable
     - _Requirements: 1.2, 3.1, 5.1_
 
-  - [ ] 11.2 Create brand profile API route
+  - [x] 11.2 Create brand profile API route
     - Create `app/api/brand/route.js`
     - Handle GET (load), POST (save), DELETE operations
     - Validate user is paid before allowing access
+    - Use brand service functions (saveBrandProfile, loadBrandProfile, deleteBrandProfile)
     - _Requirements: 2.1, 2.5, 2.6_
 
-- [ ] 12. Integrate components into Dashboard
-  - [ ] 12.1 Add Vision Model Selector to analyze tab
-    - Import and render VisionModelSelector in Dashboard
-    - Pass selected model to analysis function
-    - Show only for paid users
+- [x] 12. Integrate components into Dashboard
+  - [x] 12.1 Add Vision Model Selector to analyze tab
+    - Import VisionModelSelector and useVisionModelSelection hook
+    - Render VisionModelSelector in analyze tab above upload area
+    - Pass selected model to vision API route
+    - Show only for paid users (basic, pro, creator, business)
     - _Requirements: 1.1, 1.3_
 
-  - [ ] 12.2 Add Brand Settings to settings tab
-    - Add "Brand" section to settings tab
+  - [x] 12.2 Update analyze function to use vision API
+    - Replace mock analysis with actual API call to /api/ai/vision
+    - Pass selected model ID and uploaded image
+    - Load and pass brand profile if available
+    - Handle fallback notifications in UI
+    - Display error messages for usage limits
+    - _Requirements: 1.2, 1.5, 3.1_
+
+  - [x] 12.3 Add Brand Settings to settings tab
+    - Add "Brand Profile" section to settings tab
     - Render BrandSettings component
     - Show upgrade prompt for free users
+    - Load existing profile on mount using /api/brand
     - _Requirements: 2.1, 2.5_
 
-  - [ ] 12.3 Update analysis results to show brand-adjusted output
-    - Display both original and brand-adjusted prompts
-    - Show brand color palette in results
+  - [x] 12.4 Update analysis results to show brand-adjusted output
+    - Display both original and brand-adjusted prompts when available
+    - Show brand color palette in results if brand profile exists
+    - Add visual distinction between original and brand-adjusted prompts
+    - Add separate copy buttons for each prompt
     - _Requirements: 3.4_
 
-  - [ ] 12.4 Update usage stats display
-    - Show vision model usage separately
-    - Display per-provider breakdown
+  - [x] 12.5 Update usage stats display
+    - Add vision model usage stats to dashboard
+    - Display per-provider breakdown using getVisionUsageStats
+    - Show remaining limits per provider
+    - Add visual indicators for approaching limits
     - _Requirements: 5.4_
 
-- [ ] 13. Final Checkpoint - Ensure all tests pass
+- [x] 13. Final Checkpoint - Ensure all tests pass
+  - Run all tests with `npm test`
+  - Verify all property-based tests pass (100 iterations each)
   - Ensure all tests pass, ask the user if questions arise.
