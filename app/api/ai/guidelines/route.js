@@ -10,7 +10,7 @@
 import { getPlatformGuidelines } from '@/lib/ai';
 
 const SUPPORTED_PLATFORMS = ['meta', 'tiktok', 'google', 'x', 'twitter', 'youtube', 'linkedin', 'snapchat'];
-const SUPPORTED_CONTENT_TYPES = ['image', 'video', 'text', 'carousel', 'story', 'reel'];
+const SUPPORTED_CONTENT_TYPES = ['image', 'video', 'text', 'carousel', 'story', 'reel']; // eslint-disable-line no-unused-vars
 
 export async function POST(request) {
   try {

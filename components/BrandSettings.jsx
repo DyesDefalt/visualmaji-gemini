@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AVAILABLE_FONTS } from '../lib/brand/types';
-import { validateColorPalette, validateHexColor } from '../lib/brand/validation';
+import { validateColorPalette } from '../lib/brand/validation';
 import { saveBrandProfile, loadBrandProfile, serializeBrandProfile, deserializeBrandProfile } from '../lib/brand/service';
 
 /**
